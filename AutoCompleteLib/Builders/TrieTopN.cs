@@ -95,6 +95,30 @@ namespace AutoCompleteLib.Builders
         /// Gets an <see cref="T:System.Collections.Generic.List`1"/> Top N Words.
         /// </returns>
         /// <param name="key">The key of the element .</param>
+        public TValue[] GetAllWordsForKey(String key)
+        {
+            TrieNode<TValue> node;
+            TryGetNode(key, out node);
+            if (node != null)
+            {
+                if (node.words == null)
+                {
+                    return new TValue[0];
+                }
+                TValue[] listwords = new TValue[node.words.Keys.Count];
+                node.words.Keys.CopyTo(listwords, 0);
+                return listwords;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Gets an <see cref="T:System.Collections.Generic.List`1"/> Top N Words by key
+        /// </summary>
+        /// <returns>
+        /// Gets an <see cref="T:System.Collections.Generic.List`1"/> Top N Words.
+        /// </returns>
+        /// <param name="key">The key of the element .</param>
         /// <param name="maxcount">Max count for Top N words.</param>
         public List<TValue> GetWordsForKey(String key, int maxcount)
         {

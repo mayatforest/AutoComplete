@@ -23,7 +23,7 @@ using AutoCompleteLib.Builders;
 
 namespace AutoCompleteServer.Server
 {
-    public enum ServerState
+    enum ServerState
     {
         Unknown,
         Inited,
@@ -146,17 +146,21 @@ namespace AutoCompleteServer.Server
             
             GetCurrentClientStatus(out clientts);
             
-            ConsoleLogger.LogMessage("\r\n\r\n");
-            ConsoleLogger.LogMessage("Press x<cr> to stop server, space<cr> to show info");
+            ConsoleLogger.LogMessage("");
+            ConsoleLogger.LogMessage("");
+            ConsoleLogger.LogMessage("Press x<cr> to stop server, r<cr> to reset stats, space<cr> to show info");
+            ConsoleLogger.LogMessage("");
             ConsoleLogger.LogMessage("Server info");
             ConsoleLogger.LogMessage("Server state: " + state.ToString());
             ConsoleLogger.LogMessage("Server type: " + _servertype.ToString());
             ConsoleLogger.LogMessage("Client count: " + clientlist.Count);
             ConsoleLogger.LogMessage("Threads count: " + Process.GetCurrentProcess().Threads.Count);
             ConsoleLogger.LogMessage("WorkingSet kb: " + (Process.GetCurrentProcess().WorkingSet64/1024.0).ToString("F2"));
-            ConsoleLogger.LogMessage("Current client status: " + clientts.ToStringTS(TUAllClients.GetInterval()));
-            ConsoleLogger.LogMessage(String.Format("All Time: {0:S} {1:S}", TSTimeAllTime.ToString(), TSAllTime.ToStringTS(TSTimeAllTime)));
-            ConsoleLogger.LogMessage("\r\n\r\n");
+            ConsoleLogger.LogMessage("Transfer state:");
+            ConsoleLogger.LogMessage(String.Format("{0,10:S} {1:S}", "Current:", clientts.ToStringTS(TUAllClients.GetInterval())));
+            ConsoleLogger.LogMessage(String.Format("{0,10:S} {2:S} {1:S} ", "All Time:", TSTimeAllTime.ToString(), TSAllTime.ToStringTS(TSTimeAllTime)));
+            ConsoleLogger.LogMessage("");
+            ConsoleLogger.LogMessage("");
         }
         
         
@@ -225,8 +229,11 @@ namespace AutoCompleteServer.Server
                 {
                     TcpClient Client = Listener.AcceptTcpClient();
                     Client.NoDelay = true;
+
+                    Client.ReceiveBufferSize = 1024 * 32;
+                    Client.SendBufferSize = 1024 * 32;
                     AddClient(Client, _pb);
-                }
+                };
             }
             catch (SocketException se)            
             {
@@ -343,11 +350,14 @@ namespace AutoCompleteServer.Server
                 {
                     TUAllClients.MarkInterval();
                     TSTimeAllTime += TUAllClients.GetLastIntervalTime();
-                    ConsoleLogger.LogMessage(String.Format("All Client exit TC:{0:S} {1:S}",
+                    ConsoleLogger.LogMessage(String.Format("{0,18:S}{1:S} {2:S}",
+                        "All Client TC:",
                         TUAllClients.GetLastIntervalTime().ToString(),
                         TSAllClients.ToStringTS(TUAllClients.GetLastIntervalTime())
                         ));
-                    ConsoleLogger.LogMessage(String.Format("All Time: {0:S} {1:S}", TSTimeAllTime.ToString(), TSAllTime.ToStringTS(TSTimeAllTime)));
+                    ConsoleLogger.LogMessage(String.Format("{0,18:S}{1:S} {2:S}",
+                        "All Time: TC:",
+                        TSTimeAllTime.ToString(), TSAllTime.ToStringTS(TSTimeAllTime)));
 
                 }
             }

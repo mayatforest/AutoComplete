@@ -60,14 +60,27 @@ namespace AutoCompleteLib
         /// </summary>
         public void Stop()
         {
+
             sw.Stop();
         }
+        
         /// <summary>
         /// Сбросить таймер
         /// </summary>
         public void Reset()
         {
+
             sw.Reset();
+        }
+
+        
+        /// <summary>
+        /// Запустить таймер
+        /// </summary>
+        public void Start()
+        {
+
+            sw.Start();
         }
     }
 }

@@ -17,19 +17,31 @@ using System.Net.Sockets;
 using AutoCompleteLib;
 using AutoCompleteLib.Util;
 using AutoCompleteLib.Builders;
+using System.Threading;
 
 namespace AutoCompleteServer.Client
 {
+    enum ClientState
+    {
+        Unknown,
+        Inited,
+        Prepare_Work,
+        Prepared,
+        Working,
+        Shutdown_in_Progress,
+        Finished
+    }
+
     /// <summary>
     /// Базовый класс обработчиков клиентов.
     /// </summary>
     class ClientWorker:IClientWorker
     {
-        int processdcmd = 0;
-        private IPrefixBuilder _pb = null;
-        protected TcpClient tcpclient = null;
+        #region public
         public bool isFinished { get; private set; }
-        private TransferState ts = new TransferState();
+        public ClientState State { get; private set; }
+
+        
         public TransferState TS
         {
             get
@@ -37,11 +49,21 @@ namespace AutoCompleteServer.Client
                 return GetTS();
             }
         }
+        #endregion
+
+        #region private
+        private IPrefixBuilder _pb = null;
+        private TransferState ts = new TransferState();
+        private Int64 processdcmd = 0;
+
+        protected TcpClient tcpclient = null;
 
         public TransferState GetTS()
         {
             return new TransferState(ts);
         }
+        #endregion
+
 
         public bool Init(TcpClient inclient, IPrefixBuilder pb)
         {
@@ -50,14 +72,14 @@ namespace AutoCompleteServer.Client
 
             _pb = pb;
             tcpclient = inclient;
-
+            State = ClientState.Inited;
 
             return true;
         }
 
         protected ClientWorker()
         {
-
+            State = ClientState.Unknown;
         }
 
         public event EventHandler OnLoopFinish = delegate { };
@@ -74,7 +96,6 @@ namespace AutoCompleteServer.Client
                     if (EOFSended == false)
                     {
                         tcpclient.GetStream().Write(EOFbyte, 0, EOFbyte.Length);
-                        tcpclient.GetStream().Flush();
                     }
                     tcpclient.Close();
                 }
@@ -95,14 +116,26 @@ namespace AutoCompleteServer.Client
         /// </summary>
         public virtual bool StartLoop()
         {
+            //TestHandleBuffer(500000/64);
             return true;
         }
+        
+
         protected void NotifyOnFinishLoop()
         {
             this.OnLoopFinish(this, null);
         }
         StringBuilder request = new StringBuilder();
         protected StringBuilder answer = new StringBuilder();
+
+        void QuickAndDirtyAsciiEncode(string chars, byte[] buffer)
+        {
+            int length = chars.Length;
+            for (int i = 0; i < length; i++)
+            {
+                buffer[i] = (byte)(chars[i] & 0x7f);
+            }
+        }
 
         /// <summary>
         /// Метод обрабатывает входной буфер с помощью HandleRequest, очищает 
@@ -114,7 +147,8 @@ namespace AutoCompleteServer.Client
         {
             request.Append(Encoding.ASCII.GetString(buffer, 0, count));
             bool EOFPresent = HandleRequest(request, sbAnswer);
-            answerbytes = Encoding.ASCII.GetBytes(sbAnswer.ToString());
+            
+            answerbytes = Encoding.ASCII.GetBytes(sbAnswer.ToString());           
             sbAnswer.Length = 0;
 
             return EOFPresent;
@@ -130,7 +164,8 @@ namespace AutoCompleteServer.Client
         const String EOL = "\r\n";
         byte[] EOLbyte = Encoding.ASCII.GetBytes(EOL);
 
-        const char EOF = '\x1A';        
+        const char EOF = '\x1A';
+        const String EOFS = "\x1A";
         byte[] EOFbyte = new byte[] { 0x1A };
         private bool EOFSended = false;
         private bool CommandSended = false;
@@ -151,10 +186,10 @@ namespace AutoCompleteServer.Client
 
                 String reqstr = request.ToString();
 
-                if (reqstr.Contains(EOF))
+                if (reqstr.IndexOf(EOF)>=0)
                 {
                     EOFpresent = true;
-                    reqstr = reqstr.Replace(EOF, CR);
+                    reqstr = reqstr.Replace(EOFS, "");
 #if VERBOSE
                     ConsoleLogger.LogMessage("Recv EOF");
 #endif
@@ -162,9 +197,13 @@ namespace AutoCompleteServer.Client
                 int idxred = 0;
                 int totprocessed = 0;
                 idxred = reqstr.IndexOf(LF);
-                while (reqstr.Length >= 1 && idxred >= 0)
+                while ((reqstr.Length >= 1 && EOFpresent) || idxred >= 0)
                 {
                     String onecmd = "";
+                    if (EOFpresent && idxred==-1)
+                    {
+                        idxred = reqstr.Length - 1;
+                    }
                     if (idxred >= 0 || EOFpresent)
                     {
                         if (idxred >= 0)
@@ -214,15 +253,35 @@ namespace AutoCompleteServer.Client
             prefix = prefix.Replace(sLF, "");
             return prefix;
         }
-        /// <summary>
-        /// Обрабатывает одну строку с командой вида get <строка>. Разделитель - один пробел. Если команда не соответствует 
-        /// стандарту генерируется исключение.
-        /// </summary>
-        protected void ProcessCommand(String command, StringBuilder outsb)
+        
+        private bool SplitCommandFast(String command, out string prefix)
         {
-            processdcmd++;
-            
-            string[] arg=command.Split(' ');
+            prefix = String.Empty;
+
+            int idx_space = command.IndexOf(' ');
+            if (idx_space >= 0)
+            {
+                if (idx_space != 3)
+                {
+                    throw new WrongCommandException("Wrong command: " + command);
+                }
+                string cmd = command.Substring(0, idx_space);
+                if (cmd != "get")
+                {
+                    throw new WrongCommandException("Wrong command: " + command);
+                }
+
+                prefix = command.Substring(idx_space + 1, command.Length - idx_space - cmd.Length + 2);
+                return true;
+            }
+            return false;
+        }
+
+        private bool SplitCommand(String command,out string prefix)
+        {
+            prefix = String.Empty;
+
+            string[] arg = command.Split(' ');
             if (arg.Length != 2)
             {
                 throw new WrongCommandException("Wrong line: " + command);
@@ -232,17 +291,63 @@ namespace AutoCompleteServer.Client
             {
                 throw new WrongCommandException("Wrong command: " + arg[0]);
             }
-            String prefix= arg[1];
-            
-            
-            //prefix = prefix.Replace(sCR, "");
-            //prefix = prefix.Replace(sLF, "");
-            prefix = GetPrefixNoCRLF(prefix);
-            if (prefix == "")
-            {
-                return;
-            }
+            prefix = arg[1];
+            return true;
+        }
+        #region mockforgetwords
+        StringBuilder tmpsb = null;
+        #endregion
 
+        /// <summary>
+        /// Обрабатывает одну строку с командой вида get <строка>. Разделитель - один пробел. Если команда не соответствует 
+        /// стандарту генерируется исключение.
+        /// </summary>
+        protected void ProcessCommand(String command, StringBuilder outsb)
+        {
+            processdcmd++;
+            String prefix = String.Empty;
+
+            command = GetPrefixNoCRLF(command);
+
+            if (command == String.Empty) return;
+
+            SplitCommandFast(command, out prefix);
+            
+            
+            if (prefix == String.Empty)
+            {
+                throw new WrongCommandException("Wrong command: " + command);
+            }
+            
+            //string prefix = "bbbbcaacba";
+            #region mockforgetwords
+            /*
+            {
+                //////
+                if (tmpsb == null)
+                {
+                    tmpsb = new StringBuilder();
+                    tmpsb.Append("bbbbcaacbaab");
+                    tmpsb.Append(EOL);
+                    tmpsb.Append("bbbbcaacba");
+                    tmpsb.Append(EOL);
+                    tmpsb.Append("bbbbcaacbaabcb");
+                    tmpsb.Append(EOL);
+                    tmpsb.Append("bbbbcaacbaa");
+                    tmpsb.Append(EOL);
+                    tmpsb.Append("bbbbcaacbaabc");
+                    tmpsb.Append(EOL);
+                }
+                else
+                {
+                    outsb.Append(tmpsb.ToString());
+                }
+                return;
+                //////
+            }
+             */ 
+            #endregion
+            
             List<string> list = _pb.GetPrefixWords(prefix);
             if (list != null)
             {
@@ -252,31 +357,104 @@ namespace AutoCompleteServer.Client
                     outsb.Append(EOL);
                 }
             }
+             
         }
 
         /// <summary>
         /// Метод должен быть переопределен в потомках
         /// </summary>
-        protected virtual bool DoLoopInner(NetworkStream ns, TransferState ts)
+        protected virtual EventWaitHandle DoLoopInner(NetworkStream ns, TransferState ts)
         {
-            return false;
+            return null;
         }
+
+        TimerUtil tuLoopWorker = new TimerUtil();
+        NetworkStream nsLoopWorker = null;
+
+        protected void DoLoopWorker_Prepare()
+        {
+            if (State != ClientState.Inited)
+            {
+                throw new Exception("DoLoopWorker_Prepare Not valid state!" + State);
+            }
+            //TimerUtil tu = new TimerUtil();
+            if (tcpclient == null) return;
+            ConsoleLogger.LogMessage("Accepted client");
+
+            nsLoopWorker = tcpclient.GetStream();
+
+            tuLoopWorker.Reset();
+            tuLoopWorker.Start();
+            State = ClientState.Prepared;
+        }
+        
+        protected EventWaitHandle DoLoopWorker_Work()
+        {
+            if (State != ClientState.Prepared)
+            {
+                throw new Exception("DoLoopWorker_Work Not valid state!" + State);
+            }
+            try
+            {
+                State = ClientState.Working;
+                tuLoopWorker.MarkInterval();
+                EventWaitHandle ewh= DoLoopInner(nsLoopWorker, ts);
+                return ewh;
+            }
+            catch (Exception ex)
+            {
+                ConsoleLogger.LogMessage("Error: " + ex.Message);
+            }
+            finally
+            {
+                //State = ClientState.Shutdown_in_Progress;
+                
+            }
+            return null;
+        }
+
+        protected void DoLoopWorker_Finish()
+        {
+            if (State != ClientState.Working)
+            {
+                throw new Exception("DoLoopWorker_Finish Not valid state!" + State);
+            }
+            try
+            {
+                State = ClientState.Shutdown_in_Progress;
+
+                TimeSpan tuTS = tuLoopWorker.GetInterval();
+
+                ConsoleLogger.LogMessage(String.Format("{0,18:S}{1:S} {2:S}",
+                    "Client Exit TC:",
+                    tuTS, ts.ToStringTS(tuTS)));
+
+                CloseClient();
+
+                State = ClientState.Finished;
+                isFinished = true;
+                NotifyOnFinishLoop();
+            }
+            catch (Exception ex)
+            {
+                ConsoleLogger.LogMessage("Error: " + ex.Message);
+            }
+            finally
+            {
+                State = ClientState.Finished;
+            }
+        }
+
 
         /// <summary>
         /// Метод замеряет время работы DoLoopInner. По завершении закрывает соединение, вызывает NotifyOnFinishLoop
         /// </summary>        
         protected void DoLoopWorker()
         {
-            TimerUtil tu = new TimerUtil();
-            ts.Reset();
+            DoLoopWorker_Prepare();
             try
             {
-                if (tcpclient == null) return;
-                ConsoleLogger.LogMessage("Accepted client");
-
-                NetworkStream ns = tcpclient.GetStream();
-
-                DoLoopInner(ns, ts);
+                DoLoopWorker_Work();
             }
             catch (Exception ex)
             {
@@ -284,19 +462,38 @@ namespace AutoCompleteServer.Client
             }
             finally
             {
-                TimeSpan tuTS = tu.GetInterval();
-                
-                ConsoleLogger.LogMessage(String.Format("TC:{0:S} {1:S}",
-                    tu.GetInterval(), ts.ToStringTS(tuTS)));
-
-                CloseClient();
-
-                isFinished = true;
-                NotifyOnFinishLoop();
+                DoLoopWorker_Finish();
             }
-
         }
 
+
+        #region TestHandleBufferFunc
+        private void TestHandleBuffer(int rptcnt)
+        {
+            StringBuilder sb = new StringBuilder();
+            string bufcmd = "get bbbbcaacba";
+            int cmdcnt = 1024 / (bufcmd.Length + 2);
+            for (int i = 0; i < cmdcnt; i++)
+            {
+                sb.Append(bufcmd + EOL);
+            }
+
+            byte[] buffer = Encoding.ASCII.GetBytes(sb.ToString());
+            byte[] answer_bytes = null;
+            StringBuilder answer = new StringBuilder();
+            TransferState testts = new TransferState();
+            TimerUtil tu = new TimerUtil();
+
+            for (int hbi = 1; hbi < rptcnt; hbi++)
+            {
+                HandleBuffer(buffer, buffer.Length, answer, out answer_bytes);
+                ts.AddReadBytes(buffer.Length);
+                ts.AddWriteBytes(answer_bytes.Length);
+            }
+            ConsoleLogger.LogMessage(String.Format("TestHandleBuffer Cnt: {0:D} {1:S} {2:S}", rptcnt, tu.GetInterval(), ts.ToStringTS(tu.GetInterval())));
+            //throw new Exception("1");
+        }
+        #endregion
     }
     
     class WrongCommandException : Exception

@@ -67,7 +67,7 @@ namespace AutoCompleteServer.Client
         /// <summary>
         /// Обработчик данных. Чтение/Запись данных осуществляется синхронно.
         /// </summary>
-        protected override bool DoLoopInner(NetworkStream ns, TransferState ts)
+        protected override EventWaitHandle DoLoopInner(NetworkStream ns, TransferState ts)
         {
             byte[] bufferread = new byte[4096];
             byte[] bufferwrite = null;
@@ -87,7 +87,7 @@ namespace AutoCompleteServer.Client
                 ts.AddWriteBytes(bufferwrite.Length);
                 if (EOFPresent) break;
             }
-            return true;
+            return new ManualResetEvent(true);
         }
 
 

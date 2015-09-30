@@ -41,7 +41,8 @@ namespace AutoCompleteLib.Builders
             {
                 return list;
             }
-            List<WordItem> words = trie.GetWordsForKey(prefix, 10);            
+            //WordItem[] words = trie.GetAllWordsForKey(prefix);            
+            List<WordItem> words = trie.GetWordsForKey(prefix, base.topNWords);
 
 #if OUTINPREFIX            
             //для отладки можно выводить входной префикс

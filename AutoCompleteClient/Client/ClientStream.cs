@@ -60,8 +60,6 @@ namespace AutoCompleteClient.Client
         const String EOL = "\r\n";
         byte[] EOLbyte = Encoding.ASCII.GetBytes(EOL);
 
-        //ManualResetEvent mreReaderFinished = new ManualResetEvent(false);
-        //ManualResetEvent mreWriterFinished = new ManualResetEvent(false);
         ManualResetEvent mreServerEndData = new ManualResetEvent(false);
 
         public void DoLoop()
@@ -79,12 +77,8 @@ namespace AutoCompleteClient.Client
                 
                 TcpClient client = new TcpClient(hostname, port);
                 client.NoDelay = true;
-
-
-                tu.MarkInterval();
-
+                
                 stream = client.GetStream();
-
                 
                 tcReadWrite.MarkInterval();
 
@@ -100,12 +94,9 @@ namespace AutoCompleteClient.Client
                 //server ends data abort thrReadConsoleWriteStream and wait for thrReadStreamWriteConsole
                 //thrReadConsole_WriteStream.Abort(); this not work, see http://stackoverflow.com/questions/9479573/interrupt-console-readline
 
-//                ConsoleLogger.LogMessage("Joining threads");
 
                 thrReadStream_WriteConsole.Join();
-//                ConsoleLogger.LogMessage("Joining threads thrReadStream_WriteConsole joined");
                 thrReadConsole_WriteStream.Join();
-//                ConsoleLogger.LogMessage("Joining threads thrReadConsole_WriteStream joined");
 #if VERBOSE
 
                 ConsoleLogger.LogMessage("WaitHandle.WaitAll(wh); exit");
@@ -122,8 +113,6 @@ namespace AutoCompleteClient.Client
 
         public void ReadConsole_WriteStream()
         {
-//            ConsoleLogger.LogMessage("ReadConsole_WriteStream start:");
-            
             try
             {
                 bool ConsoleEOFPresent = false;                             
@@ -132,7 +121,6 @@ namespace AutoCompleteClient.Client
                 //прерывание происходит по концу данных EOF, Ctrl-Z в консоли
                 //или по достижению loopcnt
                 int loopcnt = 0;
-                //bool EOFSended = false;
                 while (true)
                 {
                     String readeds = null;
@@ -157,22 +145,13 @@ namespace AutoCompleteClient.Client
                         }
                         #endregion
 
-//                        TextReader txt=Console.OpenStandardInput();
-
                         if (readeds != null)
                         {
-                            ConsoleEOFPresent = readeds.Contains(EOF);
-                            if (ConsoleEOFPresent)
-                            {
-                                //EOFSended = true;
-//                                ConsoleLogger.LogMessage("End Of Input Data! EOF Present");
-                            }
+                            ConsoleEOFPresent = readeds.IndexOf(EOF)>=0;
                         }
                         else
                         {
                             ConsoleEOFPresent = true;
-                            //EOFSended = true;
-//                            ConsoleLogger.LogMessage("End Of Input Data! readline:null");
                             readeds = ""+EOF;
                         }
 
@@ -183,7 +162,7 @@ namespace AutoCompleteClient.Client
 
                             if (ConsoleEOFPresent == false)
                             {
-                                data = System.Text.Encoding.ASCII.GetBytes(readeds + EOL);
+                                data = System.Text.Encoding.ASCII.GetBytes(readeds+EOL);
                             }
                             else
                             {
@@ -201,7 +180,6 @@ namespace AutoCompleteClient.Client
 
                         if (ConsoleEOFPresent)
                         {
-//                            ConsoleLogger.LogMessage("End Of Input Data! break");
                             break;
                         }
 
@@ -209,7 +187,6 @@ namespace AutoCompleteClient.Client
 
                     if (ServerEOFpresent)
                     {
-//                        ConsoleLogger.LogMessage("ServerEOFpresent true");
                         break;
                     }
 
@@ -234,8 +211,7 @@ namespace AutoCompleteClient.Client
         /// </summary>
         private void ReadStream_WriteConsole()
         {
-//            ConsoleLogger.LogMessage("ReadStream_WriteConsole start:");
-            byte[] buffer = new byte[4096];
+            byte[] buffer = new byte[1024*16];
             try
             {
 
@@ -244,8 +220,7 @@ namespace AutoCompleteClient.Client
 
             WaitHandle[] wh = new WaitHandle[]
                     {
-                        mreFinish,
-                        mrethrNeedExit,
+                        mreFinish
                     };
 
             readcallback = ar_c =>
@@ -257,11 +232,9 @@ namespace AutoCompleteClient.Client
                         {
                             totalwrited += len;
                             String sr = System.Text.Encoding.ASCII.GetString(buffer, 0, len);
-                            if (sr.Contains(EOF))
+                            if (sr.IndexOf(EOF)>=0)
                             {
                                 ServerEOFpresent = true;
-
-//                                ConsoleLogger.LogMessage("Server sends end of input data!");
                                 sr = sr.Replace(EOF.ToString(), "");
                             }
                             if (sr != String.Empty)
@@ -272,11 +245,10 @@ namespace AutoCompleteClient.Client
                         }
                     if (len == 0)
                     {
-//                        ConsoleLogger.LogMessage("len =0");
                         mreFinish.Set();
                         return;
                     }
-                    if (!thrNeedExit)
+                    //if (!thrNeedExit)
                     {
                         stream.BeginRead(buffer,0,buffer.Length,readcallback,null);
                     }
@@ -284,52 +256,14 @@ namespace AutoCompleteClient.Client
                 catch (Exception ex)
                 {
                     ConsoleLogger.LogMessage(ex.Message);
-                    //
-//                        ConsoleLogger.LogMessage("exception: mreFinish.set");
-                        mreFinish.Set();
+                    mreFinish.Set();
                 }
             };
              
                 stream.BeginRead(buffer,0,buffer.Length,readcallback,null);
-//                ConsoleLogger.LogMessage("Reader: WaitAny");
                 int res=WaitHandle.WaitAny(wh);
-//                ConsoleLogger.LogMessage("Reader: WaitAny(wh): " + res);
                 ServerEOFpresent=true;
                 mreServerEndData.Set();
-#region oldcode
-                /*
-                while (thrNeedExit==false)
-                {
-                    if (stream.DataAvailable)
-                    {
-                        int len = stream.Read(buffer, 0, buffer.Length);
-                        if (len > 0)
-                        {
-                            totalwrited += len;
-                            String sr = System.Text.Encoding.ASCII.GetString(buffer, 0, len);
-                            if (sr.Contains(EOF))
-                            {
-                                ServerEOFpresent = true;
-
-                                ConsoleLogger.LogMessage("Server sends end of input data!");
-                                sr = sr.Replace(EOF.ToString(), "");
-                            }
-                            if (sr != String.Empty)
-                            {
-                                //Console.Out.Write(sr);
-                                //Console.Out.Flush();
-                            }
-                        }
-                    }
-                    else
-                    {
-                        
-                    }
-                    Thread.Sleep(0);
-                  
-                }
-                 */
-#endregion
             }
             catch (Exception ex)
             {
@@ -337,7 +271,6 @@ namespace AutoCompleteClient.Client
             }
             finally
             {
-//                ConsoleLogger.LogMessage("thrReadStream_WriteConsole exit:");
                 stream.Close();
 #if VERBOSE
                 ConsoleLogger.LogMessage("main: stream.close()");
