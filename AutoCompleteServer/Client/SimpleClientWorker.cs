@@ -31,9 +31,9 @@ namespace AutoCompleteServer.Client
         
         public override string ToString()
         {            
-            return String.Format("SimpleClientWorker: TH:[{0:D}] finished: {1:S}", 
+            return String.Format("SimpleClientWorker: TH:[{0:D}] state: {1:S}", 
                 workerthread!=null?workerthread.ManagedThreadId:0,
-                isFinished
+                base.State.ToString()
                 );
         }
         /// <summary>

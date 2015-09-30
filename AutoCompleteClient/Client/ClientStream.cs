@@ -5,6 +5,14 @@ Class:  ClientStream
  *             отправляются серверу, данные от сервера выводятся в Console.Out.
  *             Обмен данными завершается по EOF (Ctrl-Z)
  
+ * ChangeList:
+ *              v0.2 *Общий прирост скорости (Client+Server) после оптимизации ~50%-300% (до 20мб/сек) 
+ *                    в зависимости от кол-ва параллельных клиентов.
+ *                   *Оптимизированы размеры буферов приема/передачи
+ *                   *Чтение из сокета выполняется в асинхронном режиме, убран цикл по DataAvailable, убран Thread.Sleep.                    
+ *                   +Чтение и запись выполняется в отдельных потоках с помощью методов ReadConsole_WriteStream
+ *                    ReadStream_WriteConsole.
+ *              v0.1 Первоначальная версия. 
  ==========================================================*/
 
 using System;
@@ -26,8 +34,6 @@ namespace AutoCompleteClient.Client
     class ClientStream
     {
         NetworkStream stream;
-        bool thrNeedExit = false;
-
         ManualResetEvent mrethrNeedExit = new ManualResetEvent(false);
 
         readonly string hostname="";
@@ -189,18 +195,12 @@ namespace AutoCompleteClient.Client
                     {
                         break;
                     }
-
-                
                 }
                 ConsoleLogger.LogMessage("Shutdown!");
             }
             catch (Exception ex)
             {
                 ConsoleLogger.LogMessage(ex.Message);
-            }
-            finally
-            {
-//                ConsoleLogger.LogMessage("thrReadConsole_WriteStream exit:");
             }
         }
         bool ServerEOFpresent = false;
@@ -248,7 +248,6 @@ namespace AutoCompleteClient.Client
                         mreFinish.Set();
                         return;
                     }
-                    //if (!thrNeedExit)
                     {
                         stream.BeginRead(buffer,0,buffer.Length,readcallback,null);
                     }

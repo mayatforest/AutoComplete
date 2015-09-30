@@ -2,7 +2,10 @@
 class:  TimerUtil
 
  * Назначение: Класс замера времени выполнения с использованием System.Diagnostics.Stopwatch
- *              
+ *
+ * ChangeList:
+ *              v0.2 +Добавлены новые методы Stop,Reset,Start
+ *              v0.1 Первоначальная версия.        
   ==========================================================*/
 using System;
 using System.Collections.Generic;

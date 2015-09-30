@@ -6,6 +6,14 @@ Class:  SimplePrefixServer
  *              С консоли доступны команды
  *              <space><cr> получить информацию о текущем состоянии сервера
  *              <x><cr> завершить работу сервера
+ *              
+ * ChangeList:
+ *              v0.2 +Добавлена статистика за все время запуска сервера.
+ *                   +Добавлена команда сброса статистики - 'r'.
+ *                   +Добавлены комментарии и описания.
+ *                   
+ *              v0.1 Первоначальная версия.
+ * 
  ==========================================================*/
 
 using System;
@@ -23,12 +31,34 @@ using AutoCompleteLib.Builders;
 
 namespace AutoCompleteServer.Server
 {
-    enum ServerState
+    /// <summary>
+    ///  Статус сервера
+    /// </summary>
+    public enum ServerState
     {
+        /// <summary>
+        ///  Статус не известен
+        /// </summary>
         Unknown,
+
+        /// <summary>
+        /// Инициализирован
+        /// </summary>
         Inited,
+
+        /// <summary>
+        ///  Идет обработка
+        /// </summary>
         Working,
+
+        /// <summary>
+        ///  Подготовка к завершению
+        /// </summary>
         Shutdown_in_Progress,
+
+        /// <summary>
+        ///  Обработка закончена
+        /// </summary>
         Finished
     }
 
@@ -38,6 +68,12 @@ namespace AutoCompleteServer.Server
     /// </summary>
     class SimplePrefixServer
     {
+        #region public
+        public ServerState state { get; private set; }
+        #endregion
+
+        #region private
+
         TcpListener Listener;
         IPrefixBuilder _pb = null;
         TimerUtil TUAllClients = new TimerUtil();
@@ -52,9 +88,10 @@ namespace AutoCompleteServer.Server
         Thread clientacceptor = null;
         bool isFinish = false;
         bool isAcceptorOk = false;
-        public ServerState state { get; private set; }
+        
         object lockobj = new object();
         ManualResetEvent mreClientAcceptorStarted = new ManualResetEvent(false);
+        #endregion
 
         public SimplePrefixServer(int port, IPrefixBuilder pb, ClientWorkerTypes servertype)
         {
@@ -228,12 +265,12 @@ namespace AutoCompleteServer.Server
                 while (isFinish == false)
                 {
                     TcpClient Client = Listener.AcceptTcpClient();
-                    Client.NoDelay = true;
+                    //Client.NoDelay = true;
 
                     Client.ReceiveBufferSize = 1024 * 32;
                     Client.SendBufferSize = 1024 * 32;
                     AddClient(Client, _pb);
-                };
+                }
             }
             catch (SocketException se)            
             {

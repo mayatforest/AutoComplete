@@ -5,7 +5,20 @@ Class:  ClientWorker
  *             Потомкам необходимо переопределить методы
  *              DoLoopInner
  *              WaitForDoneClient
- *              StartLoop            
+ *              StartLoop        
+ *              
+ * ChangeList:
+ *              v0.2 *Общий прирост скорости (Client+Server) после оптимизации ~50%-300% (до 20мб/сек на Xeon) 
+ *                    в зависимости от кол-ва параллельных клиентов.
+ *                   +Добавлена поддержка статуса обработчика ClientState, вызов функции с неправильным статусом 
+ *                    генерирует исключение.
+ *                   *Оптимизированы размеры буферов приема/передачи
+ *                   +Оптимизированы функции работы с буфером.
+ *                   +Добавлен метод NextStep() для возможности реализации обработчиков по паттерну async/await.
+ *                   +Добавлены функции тестирования производительности TestHandleBuffer и ProcessCommandMockUp.
+ *              
+ *              v0.1 Первоначальная версия.
+ * 
  
  ==========================================================*/
 
@@ -21,14 +34,44 @@ using System.Threading;
 
 namespace AutoCompleteServer.Client
 {
+    /// <summary>
+    ///  Статус обработчика
+    /// </summary>
     enum ClientState
     {
+        /// <summary>
+        ///  Статус не известен
+        /// </summary>
         Unknown,
+        
+        /// <summary>
+        /// Инициализирован
+        /// </summary>
         Inited,
+        
+        /// <summary>
+        ///  Подготовка к запуску обработки
+        /// </summary>
         Prepare_Work,
+        
+        /// <summary>
+        ///  Готов к запуску обработки
+        /// </summary>
         Prepared,
+        
+        /// <summary>
+        ///  Идет обработка
+        /// </summary>
         Working,
+        
+        /// <summary>
+        ///  Подготовка к завершению
+        /// </summary>
         Shutdown_in_Progress,
+        
+        /// <summary>
+        ///  Обработка закончена
+        /// </summary>
         Finished
     }
 
@@ -38,7 +81,13 @@ namespace AutoCompleteServer.Client
     class ClientWorker:IClientWorker
     {
         #region public
-        public bool isFinished { get; private set; }
+        public bool isFinished
+        {
+            get
+            {
+                return State == ClientState.Finished;
+            }
+        }
         public ClientState State { get; private set; }
 
         
@@ -294,15 +343,9 @@ namespace AutoCompleteServer.Client
             prefix = arg[1];
             return true;
         }
-        #region mockforgetwords
+        #region ProcessCommandMockUp
         StringBuilder tmpsb = null;
-        #endregion
-
-        /// <summary>
-        /// Обрабатывает одну строку с командой вида get <строка>. Разделитель - один пробел. Если команда не соответствует 
-        /// стандарту генерируется исключение.
-        /// </summary>
-        protected void ProcessCommand(String command, StringBuilder outsb)
+        protected void ProcessCommandMockUp(String command, StringBuilder outsb)
         {
             processdcmd++;
             String prefix = String.Empty;
@@ -312,16 +355,14 @@ namespace AutoCompleteServer.Client
             if (command == String.Empty) return;
 
             SplitCommandFast(command, out prefix);
-            
-            
+
+
             if (prefix == String.Empty)
             {
                 throw new WrongCommandException("Wrong command: " + command);
             }
-            
+
             //string prefix = "bbbbcaacba";
-            #region mockforgetwords
-            /*
             {
                 //////
                 if (tmpsb == null)
@@ -345,8 +386,29 @@ namespace AutoCompleteServer.Client
                 return;
                 //////
             }
-             */ 
-            #endregion
+        }
+        #endregion
+
+        /// <summary>
+        /// Обрабатывает одну строку с командой вида get строка. Разделитель - один пробел. Если команда не соответствует 
+        /// стандарту генерируется исключение.
+        /// </summary>
+        protected void ProcessCommand(String command, StringBuilder outsb)
+        {
+            processdcmd++;
+            String prefix = String.Empty;
+
+            command = GetPrefixNoCRLF(command);
+
+            if (command == String.Empty) return;
+
+            SplitCommandFast(command, out prefix);
+            
+            
+            if (prefix == String.Empty)
+            {
+                throw new WrongCommandException("Wrong command: " + command);
+            }
             
             List<string> list = _pb.GetPrefixWords(prefix);
             if (list != null)
@@ -358,6 +420,39 @@ namespace AutoCompleteServer.Client
                 }
             }
              
+        }
+        /// <summary>
+        ///  Метод выполняет следующий по статусу метод обработчика 
+        ///  DoLoopWorker_Prepare->DoLoopWorker_Work->DoLoopWorker_Finish
+        ///  Необходим для реализации паттерна async/await.
+        ///  Позволит реализовать модификацию AsyncReadClientWorker без создания дополнительных потоков.
+        /// </summary>
+        public void NextStep()
+        {
+#if VERSBOSE            
+            ConsoleLogger.LogMessage("=======NextStep() state:" + State.ToString());
+#endif
+            switch (State)
+            {
+                case ClientState.Inited:
+                    {
+                        DoLoopWorker_Prepare();
+                        break;
+                    }
+                case ClientState.Prepared:
+                    {
+                        DoLoopWorker_Work();
+                        break;
+                    }
+                case ClientState.Working:
+                    {
+                        DoLoopWorker_Finish();
+                        break;
+                    }
+            }
+#if VERSBOSE            
+            ConsoleLogger.LogMessage("=======NextStep() state:" + State.ToString() + " Done");
+#endif
         }
 
         /// <summary>
@@ -377,7 +472,6 @@ namespace AutoCompleteServer.Client
             {
                 throw new Exception("DoLoopWorker_Prepare Not valid state!" + State);
             }
-            //TimerUtil tu = new TimerUtil();
             if (tcpclient == null) return;
             ConsoleLogger.LogMessage("Accepted client");
 
@@ -404,12 +498,7 @@ namespace AutoCompleteServer.Client
             catch (Exception ex)
             {
                 ConsoleLogger.LogMessage("Error: " + ex.Message);
-            }
-            finally
-            {
-                //State = ClientState.Shutdown_in_Progress;
-                
-            }
+            }            
             return null;
         }
 
@@ -431,8 +520,7 @@ namespace AutoCompleteServer.Client
 
                 CloseClient();
 
-                State = ClientState.Finished;
-                isFinished = true;
+                State = ClientState.Finished;                
                 NotifyOnFinishLoop();
             }
             catch (Exception ex)
@@ -447,13 +535,15 @@ namespace AutoCompleteServer.Client
 
 
         /// <summary>
-        /// Метод замеряет время работы DoLoopInner. По завершении закрывает соединение, вызывает NotifyOnFinishLoop
+        /// Метод замеряет время работы DoLoopInner.
+        /// По завершении закрывает соединение, вызывает NotifyOnFinishLoop в DoLoopWorker_Finish()
         /// </summary>        
         protected void DoLoopWorker()
         {
-            DoLoopWorker_Prepare();
             try
             {
+                DoLoopWorker_Prepare();
+
                 DoLoopWorker_Work();
             }
             catch (Exception ex)

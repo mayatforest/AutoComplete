@@ -26,12 +26,18 @@ namespace AutoCompleteServer.Client
             public Int64 totalwritebytes { get; private set; }
                       
             object lockobj = new object();
-            
+
+            /// <summary>
+            /// Создает новый объект и сбрасывает его состояние
+            /// </summary>               
             public TransferState()
             {
                 Reset();
             }
-
+                
+            /// <summary>
+            /// Создает новый объект и инициализирует переданным объектом
+            /// </summary>               
             public TransferState(TransferState ts)
             {
                 Reset();

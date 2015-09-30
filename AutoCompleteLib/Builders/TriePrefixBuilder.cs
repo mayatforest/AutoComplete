@@ -3,7 +3,10 @@ Class:  TriePrefixBuilder
 
  * Назначение: Реализация построителя префиксного словаря на основе TrieTopN.
  *              Более детальное описание см. в описании TrieTopN.
- 
+ * ChangeList:
+ *              v0.2 +Оптимизирован метод GetPrefixWords
+ *              v0.1 Первоначальная версия.                              
+  
  ==========================================================*/
 
 using System;
@@ -50,6 +53,8 @@ namespace AutoCompleteLib.Builders
 #endif
             if (words != null)
             {
+                list.Capacity = words.Count;
+
                 foreach (WordItem wi in words)
                 {
                     list.Add(wi.word);
