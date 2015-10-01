@@ -7,7 +7,9 @@ Class:  PrefixBuilder
  *              AddNewDictItem
  *              GetPrefixWords
  *              
- 
+ * ChangeList:
+ *              v0.2 *Изменен PrefixBuilder на абстрактный класс
+ *              v0.1 Первоначальная версия. 
  ==========================================================*/
 
 using System;
@@ -24,7 +26,7 @@ namespace AutoCompleteLib
     /// <summary>
     /// PrefixBuilder Реализация базового класса построения префиксных данных 
     /// </summary>
-    public class PrefixBuilder : IPrefixBuilder
+    public abstract class PrefixBuilder : IPrefixBuilder
     {
         private int DicCnt = 0;
         
